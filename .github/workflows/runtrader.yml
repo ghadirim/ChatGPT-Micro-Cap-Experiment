@@ -81,7 +81,7 @@ jobs:
 
       # ---- OPTIONAL: Alpaca paper trading (skips if any secret missing) ----
       - name: 🤝 Route orders via Alpaca (PAPER)
-        if: ${{ secrets.ALPACA_API_KEY != '' && secrets.ALPACA_SECRET_KEY != '' && secrets.ALPACA_BASE_URL != '' }}
+        if: ${{ secrets.ALPACA_API_KEY && secrets.ALPACA_SECRET_KEY && secrets.ALPACA_BASE_URL }}
         env:
           ALPACA_API_KEY:     ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY:  ${{ secrets.ALPACA_SECRET_KEY }}
@@ -97,7 +97,7 @@ jobs:
 
       # ---- OPTIONAL: Email via Outlook (skips if any secret missing) ----
       - name: ✉️ Email results (Outlook SMTP)
-        if: ${{ secrets.SMTP_SERVER != '' && secrets.SMTP_PORT != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' }}
+        if: ${{ secrets.SMTP_SERVER && secrets.SMTP_PORT && secrets.SMTP_USER && secrets.SMTP_PASS }}
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
