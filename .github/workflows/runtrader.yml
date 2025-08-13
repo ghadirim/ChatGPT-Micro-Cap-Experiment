@@ -1,4 +1,4 @@
-name: RunTrader
+name: 📈 RunTrader (Post-Close)
 
 on:
   workflow_dispatch: {}
@@ -6,7 +6,6 @@ on:
     - cron: "30 21 * * 1-5"   # 4:30pm ET, Mon–Fri
   push:
     branches: [ main ]
-  pull_request: {}
 
 permissions:
   contents: read
@@ -16,20 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Lightweight PR check so PRs don't instantly fail
-  pr_check:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Preflight (no secrets)
-        run: |
-          echo "Top-level files:"; ls -la
-          test -f "Start Your Own/Trading_Script.py" && echo "✔ Trading_Script.py found" || (echo "✖ Missing: Start Your Own/Trading_Script.py" && exit 1)
-          echo "PR preflight OK."
-
   run:
-    if: ${{ github.event_name != 'pull_request' }}
+    name: Post-Close Trading Run
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -38,45 +25,50 @@ jobs:
       PIP_NO_INPUT: "1"
 
     steps:
-      - name: Checkout repo
+      - name: 🧾 Checkout repo
         uses: actions/checkout@v4
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
+      - name: 🔎 Preflight (verify files exist)
+        run: |
+          echo "Tree (first 3 levels):"
+          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
+          test -f "Start Your Own/Trading_Script.py" || (echo "✖ Missing: Start Your Own/Trading_Script.py" && exit 1)
+          if [ ! -f "Start Your Own/Generate_Graph.py" ]; then
+            echo "ℹ Generate_Graph.py not found (will skip)."
+          fi
 
-      - name: Set up Python
+      - name: 🐍 Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python deps (prefer wheels)
+      - name: 📦 Install dependencies (prefer wheels)
         run: |
+          python -V
           python -m pip install -U pip
           if [ -f requirements.txt ]; then
             pip install --prefer-binary -r requirements.txt || true
           fi
           pip install --prefer-binary numpy pandas matplotlib yfinance requests openai
 
-      - name: Run trading + graph
+      - name: ▶️ Run Trading_Script.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo ">>> Trading_Script.py"
+          echo ">>> Trading_Script.py starting"
           python -u "Start Your Own/Trading_Script.py" --headless || echo "⚠ Trading_Script.py returned nonzero"
-          if [ -f "Start Your Own/Generate_Graph.py" ]; then
-            echo ">>> Generate_Graph.py"
-            python -u "Start Your Own/Generate_Graph.py" || echo "⚠ Generate_Graph.py returned nonzero"
-          fi
           if [ ! -f signals.csv ]; then
             echo "date,symbol,side,entry,stop,target,confidence,notes" > signals.csv
-            echo "⚠ Created blank signals.csv"
+            echo "⚠ Created blank signals.csv (script did not write one)."
           fi
 
-      - name: Upload artifacts
+      - name: ▶️ Run Generate_Graph.py (optional)
+        if: ${{ hashFiles('Start Your Own/Generate_Graph.py') != '' }}
+        run: |
+          echo ">>> Generate_Graph.py starting"
+          python -u "Start Your Own/Generate_Graph.py" || echo "⚠ Generate_Graph.py returned nonzero"
+
+      - name: 📤 Upload artifacts (signals + charts + CSVs)
         uses: actions/upload-artifact@v4
         with:
           name: outputs
@@ -87,12 +79,13 @@ jobs:
             **/*.txt
           if-no-files-found: warn
 
-      - name: Route orders via Alpaca (PAPER)
+      # ---- OPTIONAL: Alpaca paper trading (skips if any secret missing) ----
+      - name: 🤝 Route orders via Alpaca (PAPER)
         if: ${{ secrets.ALPACA_API_KEY != '' && secrets.ALPACA_SECRET_KEY != '' && secrets.ALPACA_BASE_URL != '' }}
         env:
           ALPACA_API_KEY:     ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY:  ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL:    ${{ secrets.ALPACA_BASE_URL }}
+          ALPACA_BASE_URL:    ${{ secrets.ALPACA_BASE_URL }}   # use https://paper-api.alpaca.markets for testing
           RISK_PCT_PER_TRADE: "0.005"
           MAX_POS_PCT:        "0.10"
           MAX_OPEN_NAMES:     "5"
@@ -102,7 +95,8 @@ jobs:
           TIME_IN_FORCE:      "day"
         run: python automation/order_router.py
 
-      - name: Email results (Outlook SMTP)
+      # ---- OPTIONAL: Email via Outlook (skips if any secret missing) ----
+      - name: ✉️ Email results (Outlook SMTP)
         if: ${{ secrets.SMTP_SERVER != '' && secrets.SMTP_PORT != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' }}
         uses: dawidd6/action-send-mail@v3
         with:
@@ -119,4 +113,4 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           attachments: |
             signals.csv
-            *.png
+            **/*.png
