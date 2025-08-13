@@ -1,22 +1,22 @@
-name: RunTrader PostClose
+name: 📈 RunTrader (Post-Close)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
-    - cron: "30 21 * * 1-5"  # 4:30pm ET, Mon–Fri
+    - cron: "30 21 * * 1-5"   # 4:30pm ET, Mon–Fri
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   contents: read
 
 concurrency:
-  group: runtrader-v5
+  group: runtrader
   cancel-in-progress: true
 
 jobs:
   run:
+    name: Post-Close Trading Run
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -25,27 +25,24 @@ jobs:
       PIP_NO_INPUT: "1"
 
     steps:
-      - name: Checkout repo
+      - name: 🧾 Checkout repo
         uses: actions/checkout@v4
 
-      - name: Preflight (verify files exist)
+      - name: 🔎 Preflight (verify files exist)
         run: |
           echo "Tree (first 3 levels):"
-          find . -maxdepth 3 -type f | sort | head -n 200
-          if [ ! -f "Start Your Own/Trading_Script.py" ]; then
-            echo "MISSING: Start Your Own/Trading_Script.py"
-            exit 1
-          fi
+          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
+          test -f "Start Your Own/Trading_Script.py" || (echo "✖ Missing: Start Your Own/Trading_Script.py" && exit 1)
           if [ ! -f "Start Your Own/Generate_Graph.py" ]; then
-            echo "Note: Generate_Graph.py not found (will skip)."
+            echo "ℹ Generate_Graph.py not found (will skip)."
           fi
 
-      - name: Set up Python 3.11
+      - name: 🐍 Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies (prefer wheels)
+      - name: 📦 Install dependencies (prefer wheels)
         run: |
           python -V
           python -m pip install -U pip
@@ -54,75 +51,8 @@ jobs:
           fi
           pip install --prefer-binary numpy pandas matplotlib yfinance requests openai
 
-      - name: Run Trading_Script.py
+      - name: ▶️ Run Trading_Script.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo ">>> Trading_Script.py"
-          python -u "Start Your Own/Trading_Script.py" --headless || echo "WARN: nonzero exit"
-          if [ ! -f signals.csv ]; then
-            echo "date,symbol,side,entry,stop,target,confidence,notes" > signals.csv
-            echo "Created blank signals.csv"
-          fi
-
-      - name: Run Generate_Graph.py (optional)
-        run: |
-          if [ -f "Start Your Own/Generate_Graph.py" ]; then
-            echo ">>> Generate_Graph.py"
-            python -u "Start Your Own/Generate_Graph.py" || echo "WARN: nonzero exit"
-          else
-            echo "Skipping graph (file not present)"
-          fi
-
-      - name: Prepare outputs
-        run: |
-          mkdir -p outputs
-          [ -f signals.csv ] && cp -f signals.csv outputs/ || true
-          find . -maxdepth 3 -type f -name "*.png" -exec cp -n {} outputs/ \; || true
-          find . -maxdepth 3 -type f -name "*.csv" -exec cp -n {} outputs/ \; || true
-          find . -maxdepth 3 -type f -name "*.txt" -exec cp -n {} outputs/ \; || true
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: outputs
-          path: outputs
-
-      - name: Route orders via Alpaca (paper) — safe skip
-        env:
-          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
-          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}   # set to https://paper-api.alpaca.markets
-          RISK_PCT_PER_TRADE: "0.005"
-          MAX_POS_PCT: "0.10"
-          MAX_OPEN_NAMES: "5"
-          ACCOUNT_EQUITY: ""
-          ALLOW_SHORTS: "false"
-          USE_LIMIT: "false"
-          TIME_IN_FORCE: "day"
-        run: |
-          if [ -n "$ALPACA_API_KEY" ] && [ -n "$ALPACA_SECRET_KEY" ] && [ -n "$ALPACA_BASE_URL" ]; then
-            echo "Alpaca secrets present -> placing PAPER orders"
-            python automation/order_router.py
-          else
-            echo "Skipping Alpaca (one or more Alpaca secrets missing)."
-          fi
-
-      - name: Email results via Outlook (safe skip; continues on error)
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
-          subject: RunTrader results (post-close)
-          to: mona.ghadiri@outlook.com
-          from: ${{ secrets.SMTP_USER }}
-          content_type: text/plain
-          body: |
-            Attached: today's trading signals and any generated charts.
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          attachments: |
-            outputs/signals.csv
-            outputs/*.png
+          echo ">>> Trading_Script
