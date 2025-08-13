@@ -5,13 +5,14 @@ on:
   schedule:
     - cron: "30 21 * * 1-5"  # 4:30pm ET, Mon–Fri
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: runtrader
+  group: runtrader-v5
   cancel-in-progress: true
 
 jobs:
@@ -30,7 +31,7 @@ jobs:
       - name: Preflight (verify files exist)
         run: |
           echo "Tree (first 3 levels):"
-          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
+          find . -maxdepth 3 -type f | sort | head -n 200
           if [ ! -f "Start Your Own/Trading_Script.py" ]; then
             echo "MISSING: Start Your Own/Trading_Script.py"
             exit 1
@@ -73,12 +74,13 @@ jobs:
             echo "Skipping graph (file not present)"
           fi
 
-      - name: Collect outputs
+      - name: Prepare outputs
         run: |
           mkdir -p outputs
           [ -f signals.csv ] && cp -f signals.csv outputs/ || true
-          # copy common charts/csvs/txts into outputs (best-effort)
-          find . -maxdepth 3 -type f \( -name "*.png" -o -name "*.csv" -o -name "*.txt" \) -exec cp -n {} outputs/ \; || true
+          find . -maxdepth 3 -type f -name "*.png" -exec cp -n {} outputs/ \; || true
+          find . -maxdepth 3 -type f -name "*.csv" -exec cp -n {} outputs/ \; || true
+          find . -maxdepth 3 -type f -name "*.txt" -exec cp -n {} outputs/ \; || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -88,16 +90,16 @@ jobs:
 
       - name: Route orders via Alpaca (paper) — safe skip
         env:
-          ALPACA_API_KEY:    ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL:   ${{ secrets.ALPACA_BASE_URL }}   # set to https://paper-api.alpaca.markets
+          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}   # set to https://paper-api.alpaca.markets
           RISK_PCT_PER_TRADE: "0.005"
-          MAX_POS_PCT:        "0.10"
-          MAX_OPEN_NAMES:     "5"
-          ACCOUNT_EQUITY:     ""
-          ALLOW_SHORTS:       "false"
-          USE_LIMIT:          "false"
-          TIME_IN_FORCE:      "day"
+          MAX_POS_PCT: "0.10"
+          MAX_OPEN_NAMES: "5"
+          ACCOUNT_EQUITY: ""
+          ALLOW_SHORTS: "false"
+          USE_LIMIT: "false"
+          TIME_IN_FORCE: "day"
         run: |
           if [ -n "$ALPACA_API_KEY" ] && [ -n "$ALPACA_SECRET_KEY" ] && [ -n "$ALPACA_BASE_URL" ]; then
             echo "Alpaca secrets present -> placing PAPER orders"
@@ -106,32 +108,21 @@ jobs:
             echo "Skipping Alpaca (one or more Alpaca secrets missing)."
           fi
 
-      - name: Email results via Outlook — safe skip
-        env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT:   ${{ secrets.SMTP_PORT }}
-          SMTP_USER:   ${{ secrets.SMTP_USER }}
-          SMTP_PASS:   ${{ secrets.SMTP_PASS }}
-        run: |
-          if [ -n "$SMTP_SERVER" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASS" ]; then
-            echo "Sending email via Outlook SMTP"
-            python - <<'PY'
-import smtplib, ssl, os, glob
-from email.message import EmailMessage
-srv=os.environ['SMTP_SERVER']; port=int(os.environ['SMTP_PORT'])
-usr=os.environ['SMTP_USER']; pwd=os.environ['SMTP_PASS']
-to="mona.ghadiri@outlook.com"
-msg=EmailMessage(); msg['Subject']="RunTrader Results (post-close)"; msg['From']=usr; msg['To']=to
-msg.set_content("Attached: today's trading signals and any generated charts.\n")
-if os.path.exists("signals.csv"):
-  with open("signals.csv","rb") as f: msg.add_attachment(f.read(),maintype="text",subtype="csv",filename="signals.csv")
-for p in glob.glob("outputs/*.png"):
-  with open(p,"rb") as f: msg.add_attachment(f.read(),maintype="image",subtype="png",filename=os.path.basename(p))
-ctx=ssl.create_default_context()
-with smtplib.SMTP(srv,port) as s:
-  s.starttls(context=ctx); s.login(usr,pwd); s.send_message(msg)
-print("Email sent to", to)
-PY
-          else
-            echo "Skipping email (one or more SMTP secrets missing)."
-          fi
+      - name: Email results via Outlook (safe skip; continues on error)
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: RunTrader results (post-close)
+          to: mona.ghadiri@outlook.com
+          from: ${{ secrets.SMTP_USER }}
+          content_type: text/plain
+          body: |
+            Attached: today's trading signals and any generated charts.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          attachments: |
+            outputs/signals.csv
+            outputs/*.png
