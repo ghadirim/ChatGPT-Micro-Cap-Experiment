@@ -1,59 +1,23 @@
-name: Email Smoke (Outlook App Password)
+name: ✉️ Email Smoke Test
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # allows you to run it manually
 
 jobs:
-  send:
+  send-email:
     runs-on: ubuntu-latest
     steps:
-      - name: Send test email via Outlook (app password, STARTTLS, dual-host)
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}   # your PRIMARY alias
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}   # 16-char Outlook App Password
-          TO_EMAIL:  mona.ghadiri@outlook.com
-        run: |
-          python - <<'PY'
-import os, smtplib, ssl, traceback
-from email.message import EmailMessage
-
-user = os.environ.get("SMTP_USER") or ""
-pwd  = os.environ.get("SMTP_PASS") or ""
-to   = os.environ.get("TO_EMAIL") or user
-
-if not user or not pwd:
-    raise SystemExit("Missing SMTP_USER or SMTP_PASS. Use Outlook APP PASSWORD (not your normal password).")
-
-hosts = ["smtp.office365.com", "smtp-mail.outlook.com"]
-port  = 587
-
-msg = EmailMessage()
-msg["Subject"] = "Outlook SMTP Smoke (STARTTLS + app password)"
-msg["From"] = user
-msg["To"] = to
-msg.set_content("If you see this, Outlook SMTP via app password works from GitHub Actions.")
-
-ctx = ssl.create_default_context()
-last_exc = None
-
-for host in hosts:
-    print(f"\nTrying {host}:{port} with STARTTLS …")
-    try:
-        with smtplib.SMTP(host, port, timeout=40) as s:
-            s.set_debuglevel(1)  # show SMTP dialog
-            s.ehlo()
-            s.starttls(context=ctx)
-            s.ehlo()
-            s.login(user, pwd)
-            s.send_message(msg)
-        print(f"✅ Success via {host}")
-        last_exc = None
-        break
-    except Exception as e:
-        print(f"❌ Failed on {host}: {e}")
-        traceback.print_exc()
-        last_exc = e
-
-if last_exc:
-    raise SystemExit(f"All SMTP attempts failed: {last_exc}")
-PY
+      - name: Send test email via Outlook SMTP
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: Email Smoke Test
+          to: mona.ghadiri@outlook.com
+          from: ${{ secrets.SMTP_USER }}
+          content_type: text/plain
+          body: |
+            This is a test email sent from GitHub Actions.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
