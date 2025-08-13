@@ -1,19 +1,23 @@
-name: Email Smoke (Outlook App Password)
+name: ✉️ Outlook Email Smoke Test
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: {} # run manually
 
 jobs:
-  send:
+  send-email:
     runs-on: ubuntu-latest
     steps:
-      - name: Send test email via Outlook (app password)
+      - name: 📤 Send test email via Outlook SMTP
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: ${{ secrets.SMTP_SERVER }}   # smtp.office365.com or smtp-mail.outlook.com
-          server_port: ${{ secrets.SMTP_PORT }}        # 587
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASS }}
-          subject: Email smoke test
-          to: ${{ secrets.SMTP_USER }}
+          subject: "SMTP Smoke Test"
+          to: mona.ghadiri@outlook.com
           from: ${{ secrets.SMTP_USER }}
-          body: Outlook SMTP works from GitHub Actions using an app password.
+          content_type: text/plain
+          body: |
+            This is a GitHub Actions smoke test for Outlook SMTP.
+            If you receive this, your credentials are working.
