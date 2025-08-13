@@ -1,4 +1,4 @@
-name: RunTrader v0
+name: RunTrader v1
 
 on:
   workflow_dispatch:
@@ -10,6 +10,21 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Hello
-        run: echo "RunTrader v0 hello at $(date -u)"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          echo "Tree (first 3 levels):"
+          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
+          test -f "Start Your Own/Trading_Script.py" || (echo "MISSING: Start Your Own/Trading_Script.py" && exit 1)
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Echo Python
+        run: python -V
