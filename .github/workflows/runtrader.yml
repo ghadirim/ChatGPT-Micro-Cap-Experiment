@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: runtrader-v8
+  group: runtrader-v9
   cancel-in-progress: true
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Preflight (verify files exist)
+      - name: Preflight (verify files)
         shell: bash
         run: |
           set -euo pipefail
@@ -98,95 +98,38 @@ jobs:
           name: outputs
           path: outputs
 
-      - name: Route orders via Alpaca (paper) — safe skip
+      - name: Decide if we should email
+        id: check_email
         shell: bash
-        env:
-          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
-          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}   # e.g. https://paper-api.alpaca.markets
-          RISK_PCT_PER_TRADE: "0.005"
-          MAX_POS_PCT: "0.10"
-          MAX_OPEN_NAMES: "5"
-          ACCOUNT_EQUITY: ""
-          ALLOW_SHORTS: "false"
-          USE_LIMIT: "false"
-          TIME_IN_FORCE: "day"
         run: |
           set -e
-          if [ -n "$ALPACA_API_KEY" ] && [ -n "$ALPACA_SECRET_KEY" ] && [ -n "$ALPACA_BASE_URL" ]; then
-            echo 'Alpaca secrets present -> placing PAPER orders'
-            python automation/order_router.py
-          else
-            echo 'Skipping Alpaca (one or more Alpaca secrets missing).'
-          fi
-
-      - name: Email results via Gmail (only if there are real signals or charts)
-        shell: bash
-        env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}   # smtp.gmail.com
-          SMTP_PORT:   ${{ secrets.SMTP_PORT }}     # 587
-          SMTP_USER:   ${{ secrets.SMTP_USER }}     # your Gmail address
-          SMTP_PASS:   ${{ secrets.SMTP_PASS }}     # 16-char Gmail App Password
-          TO_EMAIL:    mona.ghadiri@outlook.com
-        run: |
-          set -euo pipefail
-          # Check secrets present
-          if [ -z "${SMTP_SERVER:-}" ] || [ -z "${SMTP_PORT:-}" ] || [ -z "${SMTP_USER:-}" ] || [ -z "${SMTP_PASS:-}" ]; then
-            echo "Skipping email: one or more SMTP secrets missing."
-            exit 0
-          fi
-          # Determine if we have anything to send:
-          HAVE_ROWS=0
+          send="false"
           if [ -f outputs/signals.csv ]; then
-            # count non-empty, non-header rows
-            ROWS=$(tail -n +2 outputs/signals.csv | grep -Ev '^[[:space:]]*$' | wc -l || true)
-            if [ "${ROWS:-0}" -gt 0 ]; then
-              HAVE_ROWS=1
+            rows=$(tail -n +2 outputs/signals.csv | grep -Ev '^[[:space:]]*$' | wc -l || true)
+            if [ "${rows}" -gt 0 ]; then
+              send="true"
             fi
           fi
-          PNG_COUNT=$(ls outputs/*.png 2>/dev/null | wc -l | tr -d ' ' || echo 0)
-          if [ "${HAVE_ROWS}" -eq 0 ] && [ "${PNG_COUNT}" -eq 0 ]; then
-            echo "No non-header signals and no charts. Skipping email."
-            exit 0
+          if ls outputs/*.png >/dev/null 2>&1; then
+            send="true"
           fi
-          # Send email via Gmail SMTP with STARTTLS
-          python - <<'PY'
-import os, ssl, smtplib, glob
-from email.message import EmailMessage
+          echo "send=${send}" >> "$GITHUB_OUTPUT"
+          echo "Will send email: ${send}"
 
-server = os.environ["SMTP_SERVER"]
-port   = int(os.environ.get("SMTP_PORT","587"))
-user   = os.environ["SMTP_USER"]
-pwd    = os.environ["SMTP_PASS"]
-to     = os.environ.get("TO_EMAIL", user)
-
-msg = EmailMessage()
-msg["Subject"] = "RunTrader results (post-close)"
-msg["From"] = user
-msg["To"] = to
-msg.set_content("Attached: today's trading signals and any generated charts.\n")
-
-# Attach signals.csv if it has non-header rows
-sig_path = "outputs/signals.csv"
-if os.path.exists(sig_path):
-    with open(sig_path, "r", encoding="utf-8", errors="ignore") as f:
-        lines = [ln for ln in f.read().splitlines()]
-    data_rows = [ln for ln in lines[1:] if ln.strip()]
-    if data_rows:
-        with open(sig_path, "rb") as f:
-            msg.add_attachment(f.read(), maintype="text", subtype="csv", filename="signals.csv")
-
-# Attach charts
-for p in sorted(glob.glob("outputs/*.png")):
-    with open(p, "rb") as f:
-        msg.add_attachment(f.read(), maintype="image", subtype="png", filename=os.path.basename(p))
-
-ctx = ssl.create_default_context()
-with smtplib.SMTP(server, port, timeout=40) as s:
-    s.ehlo()
-    s.starttls(context=ctx)
-    s.ehlo()
-    s.login(user, pwd)
-    s.send_message(msg)
-print("Email sent via Gmail SMTP.")
-PY
+      - name: Email results via Gmail (SMTP)
+        if: ${{ steps.check_email.outputs.send == 'true' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}   # smtp.gmail.com
+          server_port: ${{ secrets.SMTP_PORT }}        # 587
+          username: ${{ secrets.SMTP_USER }}           # your Gmail address
+          password: ${{ secrets.SMTP_PASS }}           # 16-char Gmail App Password
+          subject: RunTrader results (post-close)
+          to: mona.ghadiri@outlook.com
+          from: ${{ secrets.SMTP_USER }}
+          body: |
+            Attached: today's trading signals and any generated charts.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          attachments: |
+            outputs/signals.csv
+            outputs/*.png
