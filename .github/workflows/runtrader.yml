@@ -1,9 +1,9 @@
-name: RunTrader v4 (Post-Close)
+name: RunTrader PostClose
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 21 * * 1-5"   # 4:30pm ET, Mon–Fri
+    - cron: "30 21 * * 1-5"  # 4:30pm ET, Mon–Fri
   push:
     branches: [ main ]
 
@@ -24,12 +24,12 @@ jobs:
       PIP_NO_INPUT: "1"
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Preflight (verify files)
+      - name: Preflight (verify files exist)
         run: |
-          echo "Tree (3 levels):"
+          echo "Tree (first 3 levels):"
           find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
           if [ ! -f "Start Your Own/Trading_Script.py" ]; then
             echo "MISSING: Start Your Own/Trading_Script.py"
@@ -73,16 +73,18 @@ jobs:
             echo "Skipping graph (file not present)"
           fi
 
-      - name: Upload artifacts (signals + charts + CSVs)
+      - name: Collect outputs
+        run: |
+          mkdir -p outputs
+          [ -f signals.csv ] && cp -f signals.csv outputs/ || true
+          # copy common charts/csvs/txts into outputs (best-effort)
+          find . -maxdepth 3 -type f \( -name "*.png" -o -name "*.csv" -o -name "*.txt" \) -exec cp -n {} outputs/ \; || true
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: outputs
-          path: |
-            signals.csv
-            **/*.png
-            **/*.csv
-            **/*.txt
-          if-no-files-found: warn
+          path: outputs
 
       - name: Route orders via Alpaca (paper) — safe skip
         env:
@@ -123,7 +125,7 @@ msg=EmailMessage(); msg['Subject']="RunTrader Results (post-close)"; msg['From']
 msg.set_content("Attached: today's trading signals and any generated charts.\n")
 if os.path.exists("signals.csv"):
   with open("signals.csv","rb") as f: msg.add_attachment(f.read(),maintype="text",subtype="csv",filename="signals.csv")
-for p in glob.glob("*.png"):
+for p in glob.glob("outputs/*.png"):
   with open(p,"rb") as f: msg.add_attachment(f.read(),maintype="image",subtype="png",filename=os.path.basename(p))
 ctx=ssl.create_default_context()
 with smtplib.SMTP(srv,port) as s:
