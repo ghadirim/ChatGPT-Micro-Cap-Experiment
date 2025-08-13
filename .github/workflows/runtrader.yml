@@ -1,18 +1,22 @@
-name: RunTrader v1
+name: RunTrader v2
 
 on:
   workflow_dispatch:
 
 jobs:
-  preflight:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Show tree
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (wheels only)
         run: |
-          echo "Top files:"
-          ls -la
-          echo
-          echo "Tree (3 levels):"
-          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
+          python -V
+          python -m pip install -U pip
+          pip install --prefer-binary numpy pandas matplotlib yfinance requests openai
