@@ -76,8 +76,8 @@ jobs:
         env:
           ALPACA_API_KEY:     ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY:  ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL:    ${{ secrets.ALPACA_BASE_URL }}  # keep as paper endpoint
-          # safe defaults; change in Secrets if you want
+          ALPACA_BASE_URL:    ${{ secrets.ALPACA_BASE_URL }}  # keep as paper endpoint: https://paper-api.alpaca.markets
+          # safe defaults; change in Secrets if desired
           RISK_PCT_PER_TRADE: "0.005"
           MAX_POS_PCT:        "0.10"
           MAX_OPEN_NAMES:     "5"
