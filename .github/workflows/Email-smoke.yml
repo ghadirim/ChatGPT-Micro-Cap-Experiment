@@ -1,23 +1,42 @@
-name: ✉️ Email Smoke Test
+name: Email Smoke (Gmail)
 
 on:
-  workflow_dispatch: # allows you to run it manually
+  workflow_dispatch:
 
 jobs:
-  send-email:
+  send:
     runs-on: ubuntu-latest
     steps:
-      - name: Send test email via Outlook SMTP
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
-          subject: Email Smoke Test
-          to: mona.ghadiri@outlook.com
-          from: ${{ secrets.SMTP_USER }}
-          content_type: text/plain
-          body: |
-            This is a test email sent from GitHub Actions.
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Send test email via Gmail SMTP (STARTTLS)
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT:   ${{ secrets.SMTP_PORT }}
+          SMTP_USER:   ${{ secrets.SMTP_USER }}
+          SMTP_PASS:   ${{ secrets.SMTP_PASS }}
+          TO_EMAIL:    mona.ghadiri@outlook.com
+        run: |
+          python - <<'PY'
+import os, smtplib, ssl
+from email.message import EmailMessage
+
+server=os.environ["SMTP_SERVER"]
+port=int(os.environ["SMTP_PORT"])
+user=os.environ["SMTP_USER"]
+pwd=os.environ["SMTP_PASS"]
+to=os.environ["TO_EMAIL"]
+
+msg=EmailMessage()
+msg["Subject"]="Gmail SMTP Smoke"
+msg["From"]=user
+msg["To"]=to
+msg.set_content("If you see this, Gmail SMTP with app password works from GitHub Actions.")
+
+ctx=ssl.create_default_context()
+with smtplib.SMTP(server, port, timeout=40) as s:
+    s.ehlo()
+    s.starttls(context=ctx)
+    s.ehlo()
+    s.login(user, pwd)
+    s.send_message(msg)
+print("✅ Email sent via Gmail")
+PY
