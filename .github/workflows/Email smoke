@@ -1,0 +1,21 @@
+name: Email Smoke (Outlook App Password)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send test email via Outlook
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}   # smtp.office365.com
+          server_port: ${{ secrets.SMTP_PORT }}        # 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}           # Outlook app password
+          subject: Email smoke test
+          to: ${{ secrets.SMTP_USER }}
+          from: ${{ secrets.SMTP_USER }}
+          body: |
+            If you see this, Outlook SMTP with an app password works from GitHub Actions.
