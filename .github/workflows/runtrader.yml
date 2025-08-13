@@ -1,10 +1,9 @@
 name: RunTrader
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: {}          # manual "Run workflow" button
   schedule:
-    # 4:30 PM US/Eastern (21:30 UTC) Mon–Fri
-    - cron: "30 21 * * 1-5"
+    - cron: "30 21 * * 1-5"      # 4:30pm ET (21:30 UTC), Mon–Fri
 
 permissions:
   contents: read
@@ -23,7 +22,7 @@ jobs:
       PIP_NO_INPUT: "1"
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Cache pip
@@ -31,15 +30,14 @@ jobs:
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          restore-keys: ${{ runner.os }}-pip-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install Python deps
         run: |
           python -m pip install -U pip
           if [ -f requirements.txt ]; then
@@ -57,72 +55,4 @@ jobs:
           python "Start Your Own/Generate_Graph.py" || true
 
       - name: Collect outputs
-        run: |
-          mkdir -p outputs
-          if [ ! -f signals.csv ]; then
-            echo "date,symbol,side,entry,stop,target,confidence,notes" > signals.csv
-          fi
-          cp -f signals.csv outputs/ || true
-          find . -maxdepth 3 -type f \( -name "*.png" -o -name "*.csv" -o -name "*.txt" \) -exec cp -f {} outputs/ \; || true
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: outputs
-          path: outputs/**
-          if-no-files-found: warn
-
-      - name: Route orders via Alpaca (PAPER)
-        env:
-          ALPACA_API_KEY:     ${{ secrets.ALPACA_API_KEY }}
-          ALPACA_SECRET_KEY:  ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL:    ${{ secrets.ALPACA_BASE_URL }}  # keep as paper endpoint: https://paper-api.alpaca.markets
-          # safe defaults; change in Secrets if desired
-          RISK_PCT_PER_TRADE: "0.005"
-          MAX_POS_PCT:        "0.10"
-          MAX_OPEN_NAMES:     "5"
-          ACCOUNT_EQUITY:     ""
-          ALLOW_SHORTS:       "false"
-          USE_LIMIT:          "false"
-          TIME_IN_FORCE:      "day"
-        run: |
-          python automation/order_router.py
-
-      - name: Email results via Outlook SMTP
-        if: always()
-        env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT:   ${{ secrets.SMTP_PORT }}
-          SMTP_USER:   ${{ secrets.SMTP_USER }}
-          SMTP_PASS:   ${{ secrets.SMTP_PASS }}
-        run: |
-          python - <<'PY'
-import smtplib, ssl, os, glob
-from email.message import EmailMessage
-
-smtp_server = os.environ['SMTP_SERVER']
-smtp_port   = int(os.environ['SMTP_PORT'])
-smtp_user   = os.environ['SMTP_USER']
-smtp_pass   = os.environ['SMTP_PASS']
-to_email    = "mona.ghadiri@outlook.com"
-
-msg = EmailMessage()
-msg['Subject'] = "RunTrader Results (post-close)"
-msg['From'] = smtp_user
-msg['To'] = to_email
-msg.set_content("Attached: today's trading signals and any generated charts.\n")
-
-if os.path.exists("signals.csv"):
-    with open("signals.csv", "rb") as f:
-        msg.add_attachment(f.read(), maintype="text", subtype="csv", filename="signals.csv")
-for file in glob.glob("*.png"):
-    with open(file, "rb") as f:
-        msg.add_attachment(f.read(), maintype="image", subtype="png", filename=os.path.basename(file))
-
-ctx = ssl.create_default_context()
-with smtplib.SMTP(smtp_server, smtp_port) as s:
-    s.starttls(context=ctx)
-    s.login(smtp_user, smtp_pass)
-    s.send_message(msg)
-print("✅ Email sent to", to_email)
-PY
+        run
