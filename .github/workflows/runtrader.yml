@@ -1,11 +1,18 @@
-name: RunTrader Sanity
+name: RunTrader v1
 
 on:
   workflow_dispatch:
 
 jobs:
-  sanity:
+  preflight:
     runs-on: ubuntu-latest
     steps:
-      - name: Say hello
-        run: echo "RunTrader sanity OK $(date -u)"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Show tree
+        run: |
+          echo "Top files:"
+          ls -la
+          echo
+          echo "Tree (3 levels):"
+          find . -maxdepth 3 -type f | sed 's|^\./||' | sort | head -n 200
