@@ -1,14 +1,11 @@
-name: RunTrader PostClose
+name: RunTrader Sanity
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 21 * * 1-5"   # 4:30pm ET, Mon–Fri
-  push:
-    branches: [ main ]
 
 jobs:
   sanity:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "RunTrader starter OK: $(date -u)"
+      - name: Say hello
+        run: echo "RunTrader sanity OK $(date -u)"
