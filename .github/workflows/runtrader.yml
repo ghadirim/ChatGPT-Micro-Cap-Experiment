@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: runtrader-v6
+  group: runtrader-v8
   cancel-in-progress: true
 
 jobs:
@@ -120,20 +120,73 @@ jobs:
             echo 'Skipping Alpaca (one or more Alpaca secrets missing).'
           fi
 
-      - name: Email results via Outlook (app password) — safe skip
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}   # smtp.office365.com
-          server_port: ${{ secrets.SMTP_PORT }}        # 587
-          username: ${{ secrets.SMTP_USER }}           # your Outlook email
-          password: ${{ secrets.SMTP_PASS }}           # Outlook App Password
-          subject: RunTrader results (post-close)
-          to: mona.ghadiri@outlook.com
-          from: ${{ secrets.SMTP_USER }}
-          body: |
-            Attached: today's trading signals and any generated charts.
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          attachments: |
-            outputs/signals.csv
-            outputs/*.png
+      - name: Email results via Gmail (only if there are real signals or charts)
+        shell: bash
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}   # smtp.gmail.com
+          SMTP_PORT:   ${{ secrets.SMTP_PORT }}     # 587
+          SMTP_USER:   ${{ secrets.SMTP_USER }}     # your Gmail address
+          SMTP_PASS:   ${{ secrets.SMTP_PASS }}     # 16-char Gmail App Password
+          TO_EMAIL:    mona.ghadiri@outlook.com
+        run: |
+          set -euo pipefail
+          # Check secrets present
+          if [ -z "${SMTP_SERVER:-}" ] || [ -z "${SMTP_PORT:-}" ] || [ -z "${SMTP_USER:-}" ] || [ -z "${SMTP_PASS:-}" ]; then
+            echo "Skipping email: one or more SMTP secrets missing."
+            exit 0
+          fi
+          # Determine if we have anything to send:
+          HAVE_ROWS=0
+          if [ -f outputs/signals.csv ]; then
+            # count non-empty, non-header rows
+            ROWS=$(tail -n +2 outputs/signals.csv | grep -Ev '^[[:space:]]*$' | wc -l || true)
+            if [ "${ROWS:-0}" -gt 0 ]; then
+              HAVE_ROWS=1
+            fi
+          fi
+          PNG_COUNT=$(ls outputs/*.png 2>/dev/null | wc -l | tr -d ' ' || echo 0)
+          if [ "${HAVE_ROWS}" -eq 0 ] && [ "${PNG_COUNT}" -eq 0 ]; then
+            echo "No non-header signals and no charts. Skipping email."
+            exit 0
+          fi
+          # Send email via Gmail SMTP with STARTTLS
+          python - <<'PY'
+import os, ssl, smtplib, glob
+from email.message import EmailMessage
+
+server = os.environ["SMTP_SERVER"]
+port   = int(os.environ.get("SMTP_PORT","587"))
+user   = os.environ["SMTP_USER"]
+pwd    = os.environ["SMTP_PASS"]
+to     = os.environ.get("TO_EMAIL", user)
+
+msg = EmailMessage()
+msg["Subject"] = "RunTrader results (post-close)"
+msg["From"] = user
+msg["To"] = to
+msg.set_content("Attached: today's trading signals and any generated charts.\n")
+
+# Attach signals.csv if it has non-header rows
+sig_path = "outputs/signals.csv"
+if os.path.exists(sig_path):
+    with open(sig_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = [ln for ln in f.read().splitlines()]
+    data_rows = [ln for ln in lines[1:] if ln.strip()]
+    if data_rows:
+        with open(sig_path, "rb") as f:
+            msg.add_attachment(f.read(), maintype="text", subtype="csv", filename="signals.csv")
+
+# Attach charts
+for p in sorted(glob.glob("outputs/*.png")):
+    with open(p, "rb") as f:
+        msg.add_attachment(f.read(), maintype="image", subtype="png", filename=os.path.basename(p))
+
+ctx = ssl.create_default_context()
+with smtplib.SMTP(server, port, timeout=40) as s:
+    s.ehlo()
+    s.starttls(context=ctx)
+    s.ehlo()
+    s.login(user, pwd)
+    s.send_message(msg)
+print("Email sent via Gmail SMTP.")
+PY
