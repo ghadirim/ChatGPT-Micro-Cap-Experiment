@@ -1,4 +1,4 @@
-name: 🟢 Smoke
+name:Smoke
 
 on:
   workflow_dispatch:
